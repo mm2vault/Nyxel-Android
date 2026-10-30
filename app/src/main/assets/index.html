@@ -687,6 +687,10 @@ body {
 .note { margin: 0; font-size: 12px; line-height: 1.5; color: var(--muted); }
 .note.err { color: #FFB4D6; }
 .foot { margin: 0; padding-bottom: 4px; font-size: 11px; text-align: center; color: var(--faint); }
+.island-settings { display: grid; gap: 8px; width: 100%; max-width: 360px; margin: 14px auto 0; }
+.island-settings .cta { width: 100%; }
+.island-settings .note { text-align: center; }
+
 
 @media (prefers-reduced-motion: reduce) {
   .island, .nyxel, .antenna::after, .spark, .zzz, .hand, .floor, .eq i, .bars i { animation: none !important; }
@@ -754,6 +758,11 @@ body {
 </div>
 
 <section class="lib" aria-label="Kitaplık">
+  <div class="island-settings">
+    <button class="cta" id="islandToggleBtn" type="button">Dynamic Island'i etkinleştir</button>
+    <p class="note" id="islandStatus" role="status">Diğer uygulamaların üzerinde görünmesi için etkinleştir.</p>
+  </div>
+
   <div class="lib-head"><h2>Kitaplığım</h2><span id="count">3 şarkı</span></div>
 
   <div class="tabs" role="tablist">
@@ -1037,6 +1046,28 @@ body {
   var ytMsg = document.getElementById('ytMsg');
   var scanBtn = document.getElementById('scanBtn');
   var scanMsg = document.getElementById('scanMsg');
+  var islandToggleBtn = document.getElementById('islandToggleBtn');
+  var islandStatus = document.getElementById('islandStatus');
+
+  function renderIslandState(enabled) {
+    islandToggleBtn.textContent = enabled ? "Dynamic Island'i kapat" : "Dynamic Island'i etkinleştir";
+    islandStatus.textContent = enabled
+      ? 'Nyxel diğer uygulamaların üzerinde aktif.'
+      : 'Kapalı. Etkinleştirdiğinde diğer uygulamaların üzerinde görünür.';
+  }
+
+  window.onIslandState = renderIslandState;
+  if (window.NyxelNative) {
+    renderIslandState(window.NyxelNative.isIslandEnabled());
+    islandToggleBtn.addEventListener('click', function () {
+      if (window.NyxelNative.isIslandEnabled()) window.NyxelNative.disableIsland();
+      else window.NyxelNative.enableIsland();
+    });
+  } else {
+    islandToggleBtn.disabled = true;
+    islandStatus.textContent = 'Dynamic Island yalnızca Android uygulamasında kullanılabilir.';
+  }
+
   var tabs = [].slice.call(document.querySelectorAll('.tab'));
   var panels = [].slice.call(document.querySelectorAll('.panel'));
   var kindLabel = { demo: 'Demo', yt: 'YouTube', local: 'Depo' };
