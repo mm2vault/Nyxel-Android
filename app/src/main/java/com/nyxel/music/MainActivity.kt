@@ -28,6 +28,10 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
+import com.nyxel.music.ai.AiMessage
+import com.nyxel.music.ai.AiCall
+import com.nyxel.music.ai.AiSecretStore
+import com.nyxel.music.ai.OpenRouterProvider
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -46,6 +50,10 @@ class MainActivity : ComponentActivity() {
     @Volatile private var updateDownloadUrl: String? = null
     @Volatile private var pendingUpdateFile: File? = null
     private var scanPending = false
+    private val aiSecretStore by lazy { AiSecretStore(this) }
+    @Volatile private var aiProvider: OpenRouterProvider? = null
+    @Volatile private var aiModelId: String = "openrouter/free"
+    @Volatile private var activeAiCall: AiCall? = null
 
     private val islandPermissionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         if (Settings.canDrawOverlays(this)) startIslandService()
@@ -324,6 +332,67 @@ class MainActivity : ComponentActivity() {
             islandEnabled() && Settings.canDrawOverlays(this@MainActivity)
         @JavascriptInterface fun checkForUpdates() { this@MainActivity.checkForUpdates() }
         @JavascriptInterface fun downloadUpdate() { this@MainActivity.downloadUpdate() }
+        @JavascriptInterface fun hasAiKey(): Boolean = aiSecretStore.readApiKey()?.isNotBlank() == true
+        @JavascriptInterface fun saveAiKey(value: String): String = try {
+            aiSecretStore.saveApiKey(value)
+            "OK"
+        } catch (error: Exception) {
+            error.message ?: "API anahtarı kaydedilemedi."
+        }
+        @JavascriptInterface fun removeAiKey() {
+            aiSecretStore.clearApiKey()
+            activeAiCall?.cancel()
+        }
+        @JavascriptInterface fun sendAiMessage(historyJson: String, requestedModel: String) {
+            val model = requestedModel.trim().ifBlank { "openrouter/free" }
+            if (!model.matches(Regex("[A-Za-z0-9._:/-]{3,120}"))) {
+                sendAiResult(null, "Model kimliği geçersiz.")
+                return
+            }
+            val messages = try {
+                val array = JSONArray(historyJson)
+                val parsed = mutableListOf<AiMessage>()
+                for (i in 0 until array.length()) {
+                    val item = array.optJSONObject(i) ?: continue
+                    val role = item.optString("role")
+                    val content = item.optString("content").trim()
+                    if (role in setOf("user", "assistant") && content.isNotBlank()) {
+                        parsed.add(AiMessage(role, content.take(8000)))
+                    }
+                }
+                parsed.takeLast(20)
+            } catch (_: Exception) {
+                sendAiResult(null, "Sohbet geçmişi okunamadı.")
+                return
+            }
+            if (messages.isEmpty()) {
+                sendAiResult(null, "Önce bir mesaj yaz.")
+                return
+            }
+            val provider = synchronized(this@MainActivity) {
+                if (aiProvider == null || aiModelId != model) {
+                    aiProvider?.shutdown()
+                    aiModelId = model
+                    aiProvider = OpenRouterProvider(this@MainActivity, model)
+                }
+                aiProvider!!
+            }
+            val system = AiMessage(
+                "system",
+                "Sen Nyxel'in Türkçe konuşan, samimi, güvenli ve pratik Android asistanısın. Kullanıcının diline uyum sağla. Bilmediğin şeyi uydurma. Cihaz ayarlarını, dosyaları veya başka uygulamaları doğrudan değiştirdiğini iddia etme; şu an yalnızca sohbet edebildiğini açıkça belirt. Zararlı veya izinsiz işlemlere yardımcı olma. Yanıtları anlaşılır ve gereksiz uzatmadan ver."
+            )
+            activeAiCall?.cancel()
+            activeAiCall = provider.send(listOf(system) + messages) { reply, error ->
+                if (reply != null) sendAiResult(reply.text, null)
+                else sendAiResult(null, error ?: "AI yanıt veremedi.")
+            }
+        }
+    }
+
+    private fun sendAiResult(answer: String?, error: String?) {
+        if (!::webView.isInitialized) return
+        val payload = JSONObject().put("answer", answer ?: JSONObject.NULL).put("error", error ?: JSONObject.NULL)
+        webView.evaluateJavascript("window.onNyxelAiReply && window.onNyxelAiReply(${JSONObject.quote(payload.toString())})", null)
     }
 
     private fun scanDeviceLibrary() {
@@ -357,6 +426,9 @@ class MainActivity : ComponentActivity() {
     override fun onDestroy() {
         handler.removeCallbacks(progressRunnable)
         updateExecutor.shutdownNow()
+        activeAiCall?.cancel()
+        aiProvider?.shutdown()
+        aiProvider = null
         controllerFuture?.let { MediaController.releaseFuture(it) }
         mediaController = null
         if (::webView.isInitialized) {
