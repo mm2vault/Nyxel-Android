@@ -178,11 +178,15 @@ class IslandOverlayService : Service() {
         return "${seconds / 60}:${(seconds % 60).toString().padStart(2, '0')}"
     }
 
+    private fun runOnMain(action: () -> Unit) {
+        ContextCompat.getMainExecutor(this).execute(action)
+    }
+
     private inner class OverlayBridge {
-        @JavascriptInterface fun setExpanded(open: Boolean) { runOnUiThread { resizeOverlay(open) } }
-        @JavascriptInterface fun togglePlayback() { runOnUiThread { controller?.let { if(it.isPlaying) it.pause() else it.play() }; updatePlaybackState() } }
-        @JavascriptInterface fun previous() { runOnUiThread { controller?.seekToPreviousMediaItem(); updatePlaybackState() } }
-        @JavascriptInterface fun next() { runOnUiThread { controller?.seekToNextMediaItem(); updatePlaybackState() } }
+        @JavascriptInterface fun setExpanded(open: Boolean) { runOnMain { resizeOverlay(open) } }
+        @JavascriptInterface fun togglePlayback() { runOnMain { controller?.let { if(it.isPlaying) it.pause() else it.play() }; updatePlaybackState() } }
+        @JavascriptInterface fun previous() { runOnMain { controller?.seekToPreviousMediaItem(); updatePlaybackState() } }
+        @JavascriptInterface fun next() { runOnMain { controller?.seekToNextMediaItem(); updatePlaybackState() } }
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
