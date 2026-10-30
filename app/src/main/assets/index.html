@@ -1117,7 +1117,7 @@ body {
     updateCheckBtn.innerHTML = 'Yeniden kontrol et';
     updateVersion.textContent = 'v' + info.versionName;
     if (info.available) {
-      updateStatus.textContent = 'Yeni sürüm hazır · ' + prettyBytes(info.size) + '. ' + String(info.notes || '').replace(/NYXEL_VERSION_CODE=\\d+/g, '').trim().slice(0, 150);
+      updateStatus.textContent = 'Yeni sürüm hazır · ' + prettyBytes(info.size) + '. ' + String(info.notes || '').replace(/NYXEL_VERSION_CODE=\d+/g, '').trim().slice(0, 150);
       updateDownloadBtn.hidden = false;
     } else {
       updateStatus.textContent = 'Harika! En güncel sürümü kullanıyorsun.';
