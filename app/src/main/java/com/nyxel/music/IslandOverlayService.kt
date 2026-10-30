@@ -7,7 +7,9 @@ import android.content.pm.ServiceInfo
 import android.graphics.Color
 import android.graphics.PixelFormat
 import android.os.Build
+import android.os.Handler
 import android.os.IBinder
+import android.os.Looper
 import android.provider.Settings
 import android.view.Gravity
 import android.view.WindowManager
@@ -24,7 +26,7 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.ListenableFuture
 import org.json.JSONObject
 
-/** Floating Nyxel island using the exact supplied HTML/CSS character and capsule. */
+/** Floating Nyxel island. The supplied HTML remains the source of truth for its appearance. */
 class IslandOverlayService : Service() {
     private lateinit var windowManager: WindowManager
     private var overlay: WebView? = null
@@ -32,9 +34,21 @@ class IslandOverlayService : Service() {
     private var controller: MediaController? = null
     private var controllerFuture: ListenableFuture<MediaController>? = null
     private var pageReady = false
+    private val mainHandler = Handler(Looper.getMainLooper())
+
+    private val progressTicker = object : Runnable {
+        override fun run() {
+            updatePlaybackState()
+            if (controller?.isPlaying == true) mainHandler.postDelayed(this, 500L)
+        }
+    }
 
     private val playerListener = object : Player.Listener {
-        override fun onIsPlayingChanged(isPlaying: Boolean) = updatePlaybackState()
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            updatePlaybackState()
+            mainHandler.removeCallbacks(progressTicker)
+            if (isPlaying) mainHandler.post(progressTicker)
+        }
         override fun onMediaMetadataChanged(mediaMetadata: MediaMetadata) = updatePlaybackState()
         override fun onMediaItemTransition(mediaItem: androidx.media3.common.MediaItem?, reason: Int) = updatePlaybackState()
         override fun onPlaybackStateChanged(playbackState: Int) = updatePlaybackState()
@@ -83,6 +97,7 @@ class IslandOverlayService : Service() {
                 controller = it
                 it.addListener(playerListener)
                 updatePlaybackState()
+                if (it.isPlaying) mainHandler.post(progressTicker)
             }
         }, ContextCompat.getMainExecutor(this))
     }
@@ -90,6 +105,11 @@ class IslandOverlayService : Service() {
     private fun createIslandView() {
         val web = WebView(this).apply {
             setBackgroundColor(Color.TRANSPARENT)
+            // Software compositing avoids opaque rectangular WebView surfaces on some Android skins.
+            setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, null)
+            isVerticalScrollBarEnabled = false
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = android.view.View.OVER_SCROLL_NEVER
             settings.javaScriptEnabled = true
             settings.domStorageEnabled = true
             settings.allowFileAccess = true
@@ -108,29 +128,42 @@ class IslandOverlayService : Service() {
         val params = WindowManager.LayoutParams(
             dp(130), dp(38),
             WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN,
+            WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE or
+                WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+                WindowManager.LayoutParams.FLAG_NOT_TOUCH_MODAL,
             PixelFormat.TRANSLUCENT
-        ).apply { gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL; y = dp(8) }
+        ).apply {
+            gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
+            y = dp(8)
+            alpha = 1f
+        }
         overlay = web
         layoutParams = params
-        runCatching { windowManager.addView(web, params); web.loadUrl("file:///android_asset/index.html") }
-            .onFailure { stopSelf() }
+        runCatching {
+            windowManager.addView(web, params)
+            web.loadUrl("file:///android_asset/index.html")
+        }.onFailure { stopSelf() }
     }
 
-    /** Hide only the library; keep the user's original capsule, Nyxel art, CSS and animations. */
+    /** Hide the library only; retain the original capsule, character, styling and animations. */
     private fun installOverlayHooks() {
         val js = """
           (function(){
             if(window.__nyxelOverlayInstalled)return;
             window.__nyxelOverlayInstalled=true;
             var css=document.createElement('style');
-            css.textContent='html,body{width:100%!important;height:auto!important;min-height:0!important;margin:0!important;padding:0!important;display:block!important;overflow:hidden!important;background:transparent!important}body{box-sizing:border-box!important}.lib{display:none!important}.island{margin:0 auto!important}';
+            css.textContent='html,body{width:100%!important;height:100%!important;min-height:0!important;margin:0!important;padding:0!important;display:block!important;overflow:hidden!important;background:transparent!important;background-color:transparent!important;background-image:none!important;box-shadow:none!important}body{box-sizing:border-box!important}.lib{display:none!important}.island{margin:0 auto!important;max-width:100%!important}';
             document.head.appendChild(css);
             var island=document.getElementById('island');
             var tap=document.getElementById('tap');
             if(tap)tap.addEventListener('click',function(){setTimeout(function(){if(window.NyxelOverlay)window.NyxelOverlay.setExpanded(!!(island&&island.dataset.open==='true'));},0);});
             function intercept(id,action){var b=document.getElementById(id);if(!b)return;b.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();if(window.NyxelOverlay)window.NyxelOverlay[action]();},true);}
             intercept('playBtn','togglePlayback');intercept('prevBtn','previous');intercept('nextBtn','next');
+            var rail=document.querySelector('.player .rail');
+            if(rail)rail.addEventListener('click',function(e){
+              var r=rail.getBoundingClientRect(),ratio=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width));
+              if(window.NyxelOverlay)window.NyxelOverlay.seekTo(ratio);
+            });
             window.nyxelNativeRender=function(d){
               d=d||{};function t(id,v){var e=document.getElementById(id);if(e&&v!=null)e.textContent=v;}
               t('title',d.title||'Nyxel');t('artist',d.artist||'Müzik hazır');t('status',d.status||'Seni dinliyorum...');
@@ -169,7 +202,7 @@ class IslandOverlayService : Service() {
             .put("status", if (playing) "Şimdi çalıyor" else "Seni dinliyorum...")
             .put("position", formatTime(position))
             .put("duration", formatTime(duration))
-            .put("progress", if (duration > 0) ((position * 100) / duration).toInt().coerceIn(0,100) else 0)
+            .put("progress", if (duration > 0) ((position * 100) / duration).toInt().coerceIn(0, 100) else 0)
         if (pageReady) overlay?.evaluateJavascript("window.nyxelNativeRender&&window.nyxelNativeRender($payload)", null)
     }
 
@@ -184,14 +217,29 @@ class IslandOverlayService : Service() {
 
     private inner class OverlayBridge {
         @JavascriptInterface fun setExpanded(open: Boolean) { runOnMain { resizeOverlay(open) } }
-        @JavascriptInterface fun togglePlayback() { runOnMain { controller?.let { if(it.isPlaying) it.pause() else it.play() }; updatePlaybackState() } }
+        @JavascriptInterface fun togglePlayback() {
+            runOnMain {
+                controller?.let { if (it.isPlaying) it.pause() else it.play() }
+                updatePlaybackState()
+            }
+        }
         @JavascriptInterface fun previous() { runOnMain { controller?.seekToPreviousMediaItem(); updatePlaybackState() } }
         @JavascriptInterface fun next() { runOnMain { controller?.seekToNextMediaItem(); updatePlaybackState() } }
+        @JavascriptInterface fun seekTo(ratio: Float) {
+            runOnMain {
+                controller?.let { player ->
+                    val duration = player.duration
+                    if (duration > 0) player.seekTo((duration * ratio.coerceIn(0f, 1f)).toLong())
+                    updatePlaybackState()
+                }
+            }
+        }
     }
 
     private fun dp(v: Int) = (v * resources.displayMetrics.density).toInt()
 
     override fun onDestroy() {
+        mainHandler.removeCallbacks(progressTicker)
         overlay?.let { runCatching { windowManager.removeView(it) }; it.destroy() }
         controller?.removeListener(playerListener)
         controllerFuture?.let { MediaController.releaseFuture(it) }
