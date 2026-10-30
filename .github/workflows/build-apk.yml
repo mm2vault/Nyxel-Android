@@ -13,6 +13,10 @@ on:
 permissions:
   contents: write
 
+concurrency:
+  group: nyxel-main-release
+  cancel-in-progress: false
+
 jobs:
   build:
     name: Build, sign and publish Nyxel
