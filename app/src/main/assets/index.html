@@ -690,6 +690,19 @@ body {
 .island-settings { display: grid; gap: 8px; width: 100%; max-width: 360px; margin: 14px auto 0; }
 .island-settings .cta { width: 100%; }
 .island-settings .note { text-align: center; }
+.update-card { width: 100%; max-width: 360px; margin: 10px auto 0; padding: 14px; box-sizing: border-box; display: grid; gap: 10px; border: 1px solid rgba(167,139,250,.28); border-radius: 18px; background: linear-gradient(145deg,rgba(139,92,246,.13),rgba(8,5,16,.72)); box-shadow: 0 10px 30px rgba(0,0,0,.2); }
+.update-top { display:flex; align-items:center; justify-content:space-between; gap:10px; }
+.update-title { font-size: 12px; font-weight:700; letter-spacing:.2px; }
+.update-version { color:var(--pink-soft); font-size:10px; font-weight:700; }
+.update-status { margin:0; color:var(--muted); font-size:10px; line-height:1.5; }
+.update-actions { display:flex; gap:8px; }
+.update-actions .cta { flex:1; min-width:0; }
+.update-progress { height:5px; overflow:hidden; border-radius:99px; background:rgba(255,255,255,.1); }
+.update-progress-fill { height:100%; width:0%; border-radius:inherit; background:linear-gradient(90deg,var(--purple),var(--pink)); box-shadow:0 0 14px rgba(167,139,250,.6); transition:width .18s ease; }
+.update-meta { display:flex; justify-content:space-between; color:var(--faint); font-size:9px; }
+.update-spin { display:inline-block; width:11px; height:11px; margin-right:6px; border:2px solid rgba(255,255,255,.22); border-top-color:var(--pink); border-radius:50%; vertical-align:-2px; animation:nyxel-spin .7s linear infinite; }
+@keyframes nyxel-spin { to { transform:rotate(360deg); } }
+
 
 
 @media (prefers-reduced-motion: reduce) {
@@ -761,6 +774,21 @@ body {
   <div class="island-settings">
     <button class="cta" id="islandToggleBtn" type="button">Dynamic Island'i etkinleştir</button>
     <p class="note" id="islandStatus" role="status">Diğer uygulamaların üzerinde görünmesi için etkinleştir.</p>
+  </div>
+  <div class="update-card" aria-label="Nyxel güncellemeleri">
+    <div class="update-top">
+      <span class="update-title">Nyxel Güncellemeleri</span>
+      <span class="update-version" id="updateVersion">v2.0.0</span>
+    </div>
+    <p class="update-status" id="updateStatus" role="status">Sürüm kontrolü hazır.</p>
+    <div class="update-progress" id="updateProgress" hidden>
+      <div class="update-progress-fill" id="updateProgressFill"></div>
+    </div>
+    <div class="update-meta" id="updateMeta" hidden><span id="updateDownloaded">0 MB</span><span id="updatePercent">0%</span></div>
+    <div class="update-actions">
+      <button class="cta" id="updateCheckBtn" type="button">Güncellemeleri kontrol et</button>
+      <button class="cta" id="updateDownloadBtn" type="button" hidden>İndir ve güncelle</button>
+    </div>
   </div>
 
   <div class="lib-head"><h2>Kitaplığım</h2><span id="count">3 şarkı</span></div>
@@ -1067,6 +1095,89 @@ body {
     islandToggleBtn.disabled = true;
     islandStatus.textContent = 'Dynamic Island yalnızca Android uygulamasında kullanılabilir.';
   }
+
+  var updateStatus = document.getElementById('updateStatus');
+  var updateVersion = document.getElementById('updateVersion');
+  var updateCheckBtn = document.getElementById('updateCheckBtn');
+  var updateDownloadBtn = document.getElementById('updateDownloadBtn');
+  var updateProgress = document.getElementById('updateProgress');
+  var updateProgressFill = document.getElementById('updateProgressFill');
+  var updateMeta = document.getElementById('updateMeta');
+  var updateDownloaded = document.getElementById('updateDownloaded');
+  var updatePercent = document.getElementById('updatePercent');
+
+  function prettyBytes(bytes) {
+    if (!bytes || bytes < 1) return 'Boyut bilinmiyor';
+    return bytes >= 1048576 ? (bytes / 1048576).toFixed(1) + ' MB' : (bytes / 1024).toFixed(0) + ' KB';
+  }
+
+  window.onUpdateCheck = function (raw) {
+    var info = typeof raw === 'string' ? JSON.parse(raw) : raw;
+    updateCheckBtn.disabled = false;
+    updateCheckBtn.innerHTML = 'Yeniden kontrol et';
+    updateVersion.textContent = 'v' + info.versionName;
+    if (info.available) {
+      updateStatus.textContent = 'Yeni sürüm hazır · ' + prettyBytes(info.size) + '. ' + String(info.notes || '').replace(/NYXEL_VERSION_CODE=\\d+/g, '').trim().slice(0, 150);
+      updateDownloadBtn.hidden = false;
+    } else {
+      updateStatus.textContent = 'Harika! En güncel sürümü kullanıyorsun.';
+      updateDownloadBtn.hidden = true;
+    }
+  };
+
+  window.onUpdateError = function (message) {
+    updateCheckBtn.disabled = false;
+    updateCheckBtn.innerHTML = 'Yeniden dene';
+    updateStatus.textContent = message || 'Güncelleme kontrol edilemedi.';
+    updateDownloadBtn.disabled = false;
+  };
+
+  window.onUpdateProgress = function (percent, downloaded, total) {
+    updateProgress.hidden = false;
+    updateMeta.hidden = false;
+    updateDownloadBtn.disabled = true;
+    updateDownloadBtn.textContent = 'İndiriliyor…';
+    updateStatus.textContent = 'Yeni sürüm güvenli şekilde indiriliyor.';
+    updateProgressFill.style.width = (percent >= 0 ? percent : 0) + '%';
+    updateDownloaded.textContent = prettyBytes(downloaded) + (total > 0 ? ' / ' + prettyBytes(total) : '');
+    updatePercent.textContent = percent >= 0 ? percent + '%' : 'İndiriliyor';
+  };
+
+  window.onUpdateDownloaded = function () {
+    updateProgressFill.style.width = '100%';
+    updatePercent.textContent = '100%';
+    updateStatus.textContent = 'İndirme tamamlandı. Android kurulum ekranı açılıyor…';
+    updateDownloadBtn.textContent = 'Kurulum açılıyor';
+  };
+
+  updateCheckBtn.addEventListener('click', function () {
+    if (!window.NyxelNative) {
+      updateStatus.textContent = 'Güncelleme kontrolü Android uygulamasında kullanılabilir.';
+      return;
+    }
+    updateDownloadBtn.hidden = true;
+    updateCheckBtn.disabled = true;
+    updateCheckBtn.innerHTML = '<span class="update-spin"></span>Kontrol ediliyor';
+    updateStatus.textContent = 'GitHub Releases kontrol ediliyor…';
+    window.NyxelNative.checkForUpdates();
+  });
+
+  updateDownloadBtn.addEventListener('click', function () {
+    if (!window.NyxelNative) return;
+    updateDownloadBtn.disabled = true;
+    updateProgress.hidden = false;
+    updateMeta.hidden = false;
+    updateStatus.textContent = 'İndirme hazırlanıyor…';
+    window.NyxelNative.downloadUpdate();
+  });
+
+  if (window.NyxelNative) {
+    setTimeout(function () { updateCheckBtn.click(); }, 1100);
+  } else {
+    updateCheckBtn.disabled = true;
+    updateStatus.textContent = 'Güncelleme kontrolü yalnızca Android uygulamasında kullanılabilir.';
+  }
+
 
   var tabs = [].slice.call(document.querySelectorAll('.tab'));
   var panels = [].slice.call(document.querySelectorAll('.panel'));
