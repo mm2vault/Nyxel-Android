@@ -22,7 +22,8 @@ android {
                 storeFile = file(keystorePath)
                 storePassword = System.getenv("NYXEL_KEYSTORE_PASSWORD")
                 keyAlias = System.getenv("NYXEL_KEY_ALIAS")
-                keyPassword = System.getenv("NYXEL_KEY_PASSWORD")
+                // PKCS12 keystores use the store password to unlock the private key.
+                keyPassword = storePassword
             }
         }
     }
