@@ -1,15 +1,30 @@
-# Nyxel Android 2.0
+# Nyxel Android
 
 - Application ID: `com.nyxel.music`
-- Version: `2.0.0` (versionCode 1)
-- Minimum Android: 8.0 / API 26
-- UI: original Nyxel HTML/CSS character and player UI, packaged locally in Android WebView.
+- Android minimum: 8.0 / API 26
+- UI: original Nyxel HTML/CSS character and player UI packaged locally in Android WebView.
 - Local music: MediaStore library scan + Media3 ExoPlayer.
 - Background playback: MediaSessionService with Android media notification and lock-screen controls.
-- YouTube links: official embedded player while app is foregrounded; no audio extraction or background-play workaround.
+- Dynamic Island: user-enabled floating overlay with playback controls.
+- Updates: checks the latest GitHub Release, downloads `Nyxel.apk` with progress, verifies the APK package ID, then opens Android's package installer.
 
-## Build
-Push to main or manually run **Actions → Build Nyxel APK**. The workflow builds a debug APK and uploads it as an artifact. Debug APK is for testing, not production distribution.
+## Direct APK releases
 
-## Signing and updates
-For install-over updates, keep the same application ID and sign every release with the same release keystore. This first setup deliberately does not invent or generate a production signing key. A release keystore and in-app updater are later tasks.
+Every push to `main` that changes app code or the build workflow triggers **Build and Publish Nyxel APK**. The workflow builds a signed release APK and publishes the raw `Nyxel.apk` file directly under GitHub **Releases**. It also keeps a short-lived Actions artifact for build inspection.
+
+## One-time signing setup
+
+In GitHub, open **Settings → Secrets and variables → Actions → New repository secret** and add:
+
+- `NYXEL_KEYSTORE_BASE64`: the release keystore file encoded as Base64.
+- `NYXEL_KEYSTORE_PASSWORD`: keystore password.
+- `NYXEL_KEY_ALIAS`: key alias.
+- `NYXEL_KEY_PASSWORD`: key password.
+
+The keystore must be the one intended for Nyxel. Do not rotate or replace it after distributing an installable APK: Android requires the same signing certificate for in-place updates. Keep these values private; never commit the keystore or passwords to this repository.
+
+## Versioning and installation
+
+The workflow assigns an increasing `versionCode` to each release. The in-app updater compares that code with the installed build, downloads the newest release asset, and hands it to Android for the user's final install confirmation. Android may ask once for permission to install unknown apps from Nyxel.
+
+The application ID remains `com.nyxel.music`; changing it would make Android treat the app as a separate installation.
