@@ -120,7 +120,7 @@ class IslandOverlayService : Service() {
                 override fun onPageFinished(view: WebView?, url: String?) {
                     super.onPageFinished(view, url)
                     pageReady = true
-                    installOverlayHooks()
+                    resizeOverlay(false)
                     updatePlaybackState()
                 }
             }
@@ -141,44 +141,8 @@ class IslandOverlayService : Service() {
         layoutParams = params
         runCatching {
             windowManager.addView(web, params)
-            web.loadUrl("file:///android_asset/index.html")
+            web.loadUrl("file:///android_asset/overlay.html")
         }.onFailure { stopSelf() }
-    }
-
-    /** Hide the library only; retain the original capsule, character, styling and animations. */
-    private fun installOverlayHooks() {
-        val js = """
-          (function(){
-            if(window.__nyxelOverlayInstalled)return;
-            window.__nyxelOverlayInstalled=true;
-            var css=document.createElement('style');
-            css.textContent='html,body{width:100%!important;height:100%!important;min-height:0!important;margin:0!important;padding:0!important;display:block!important;overflow:hidden!important;background:transparent!important;background-color:transparent!important;background-image:none!important;box-shadow:none!important}body{box-sizing:border-box!important}.lib{display:none!important}.island{margin:0 auto!important;max-width:100%!important}';
-            document.head.appendChild(css);
-            var island=document.getElementById('island');
-            var tap=document.getElementById('tap');
-            if(tap)tap.addEventListener('click',function(){setTimeout(function(){if(window.NyxelOverlay)window.NyxelOverlay.setExpanded(!!(island&&island.dataset.open==='true'));},0);});
-            function intercept(id,action){var b=document.getElementById(id);if(!b)return;b.addEventListener('click',function(e){e.preventDefault();e.stopPropagation();e.stopImmediatePropagation();if(window.NyxelOverlay)window.NyxelOverlay[action]();},true);}
-            intercept('playBtn','togglePlayback');intercept('prevBtn','previous');intercept('nextBtn','next');
-            var rail=document.querySelector('.player .rail');
-            if(rail)rail.addEventListener('click',function(e){
-              var r=rail.getBoundingClientRect(),ratio=Math.max(0,Math.min(1,(e.clientX-r.left)/r.width));
-              if(window.NyxelOverlay)window.NyxelOverlay.seekTo(ratio);
-            });
-            window.nyxelNativeRender=function(d){
-              d=d||{};function t(id,v){var e=document.getElementById(id);if(e&&v!=null)e.textContent=v;}
-              t('title',d.title||'Nyxel');t('artist',d.artist||'Müzik hazır');t('status',d.status||'Seni dinliyorum...');
-              t('chip',d.playing?'Çalıyor':'Sakin');t('cur',d.position||'0:00');t('dur',d.duration||'0:00');
-              var fill=document.getElementById('fill');if(fill)fill.style.width=(d.progress||0)+'%';
-              if(island)island.dataset.playing=d.playing?'true':'false';
-              var p=document.getElementById('iPlay'),q=document.getElementById('iPause');if(p)p.hidden=!!d.playing;if(q)q.hidden=!d.playing;
-              document.querySelectorAll('.nyxel').forEach(function(f){f.classList.toggle('grooving',!!d.playing);f.dataset.mood=d.playing?'happy':'idle';});
-            };
-            window.nyxelNativeRender({});
-            if(window.NyxelOverlay)window.NyxelOverlay.setExpanded(false);
-          })();
-        """.trimIndent()
-        overlay?.evaluateJavascript(js, null)
-        resizeOverlay(false)
     }
 
     private fun resizeOverlay(open: Boolean) {
