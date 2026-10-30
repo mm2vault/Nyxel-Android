@@ -14,7 +14,6 @@ import android.provider.Settings
 import android.view.Gravity
 import android.view.WindowManager
 import android.webkit.JavascriptInterface
-import android.webkit.WebChromeClient
 import android.webkit.WebView
 import android.webkit.WebViewClient
 import androidx.core.app.NotificationCompat
@@ -39,7 +38,7 @@ class IslandOverlayService : Service() {
     private val progressTicker = object : Runnable {
         override fun run() {
             updatePlaybackState()
-            if (controller?.isPlaying == true) mainHandler.postDelayed(this, 500L)
+            if (controller?.isPlaying == true) mainHandler.postDelayed(this, 1000L)
         }
     }
 
@@ -105,16 +104,13 @@ class IslandOverlayService : Service() {
     private fun createIslandView() {
         val web = WebView(this).apply {
             setBackgroundColor(Color.TRANSPARENT)
-            // Software compositing avoids opaque rectangular WebView surfaces on some Android skins.
-            setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, null)
             isVerticalScrollBarEnabled = false
             isHorizontalScrollBarEnabled = false
             overScrollMode = android.view.View.OVER_SCROLL_NEVER
             settings.javaScriptEnabled = true
-            settings.domStorageEnabled = true
+            settings.domStorageEnabled = false
             settings.allowFileAccess = true
-            settings.allowContentAccess = true
-            webChromeClient = WebChromeClient()
+            settings.allowContentAccess = false
             addJavascriptInterface(OverlayBridge(), "NyxelOverlay")
             webViewClient = object : WebViewClient() {
                 override fun onPageFinished(view: WebView?, url: String?) {
