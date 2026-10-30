@@ -45,15 +45,13 @@ jobs:
           : "${NYXEL_KEYSTORE_BASE64:?Missing NYXEL_KEYSTORE_BASE64 repository secret}"
           : "${NYXEL_KEYSTORE_PASSWORD:?Missing NYXEL_KEYSTORE_PASSWORD repository secret}"
           : "${NYXEL_KEY_ALIAS:?Missing NYXEL_KEY_ALIAS repository secret}"
-          : "${NYXEL_KEY_PASSWORD:?Missing NYXEL_KEY_PASSWORD repository secret}"
           KEYSTORE="$RUNNER_TEMP/nyxel-release.keystore"
           printf '%s' "$NYXEL_KEYSTORE_BASE64" | base64 --decode > "$KEYSTORE"
           test -s "$KEYSTORE"
-          keytool -list -keystore "$KEYSTORE" -storepass "$NYXEL_KEYSTORE_PASSWORD" -alias "$NYXEL_KEY_ALIAS" -keypass "$NYXEL_KEY_PASSWORD" >/dev/null
+          keytool -list -keystore "$KEYSTORE" -storepass "$NYXEL_KEYSTORE_PASSWORD" -alias "$NYXEL_KEY_ALIAS" >/dev/null
           echo "NYXEL_KEYSTORE_FILE=$KEYSTORE" >> "$GITHUB_ENV"
           echo "NYXEL_KEYSTORE_PASSWORD=$NYXEL_KEYSTORE_PASSWORD" >> "$GITHUB_ENV"
           echo "NYXEL_KEY_ALIAS=$NYXEL_KEY_ALIAS" >> "$GITHUB_ENV"
-          echo "NYXEL_KEY_PASSWORD=$NYXEL_KEY_PASSWORD" >> "$GITHUB_ENV"
 
       - name: Calculate release version
         id: version
