@@ -28,3 +28,15 @@ The keystore must be the one intended for Nyxel. Do not rotate or replace it aft
 The workflow assigns an increasing `versionCode` to each release. The in-app updater compares that code with the installed build, downloads the newest release asset, and hands it to Android for the user's final install confirmation. Android may ask once for permission to install unknown apps from Nyxel.
 
 The application ID remains `com.nyxel.music`; changing it would make Android treat the app as a separate installation.
+
+
+## Nyxel AI
+
+Nyxel AI uses a provider-independent architecture so cloud and on-device models can be switched without rewriting the app.
+
+- OpenRouter chat API adapter with a user-supplied key encrypted by Android Keystore.
+- Planned local inference through Google's LiteRT-LM Kotlin API.
+- No API key or model weights are bundled into the APK.
+- See [AI architecture](docs/AI_ARCHITECTURE.md) for provider strategy, model candidates and implementation status.
+
+Cloud free tiers may be rate-limited or change. Local model speed depends on the phone hardware.
