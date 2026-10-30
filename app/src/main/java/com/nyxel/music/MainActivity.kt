@@ -2,6 +2,7 @@ package com.nyxel.music
 
 import android.Manifest
 import android.content.ComponentName
+import android.content.Intent
 import android.content.pm.PackageManager
 import android.database.Cursor
 import android.net.Uri
@@ -10,6 +11,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.MediaStore
+import android.provider.Settings
 import android.view.WindowManager
 import android.webkit.JavascriptInterface
 import android.webkit.WebChromeClient
@@ -35,9 +37,16 @@ class MainActivity : ComponentActivity() {
     private val handler = Handler(Looper.getMainLooper())
     private var scanPending = false
 
+    private val islandPermissionLauncher = registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+        if (Settings.canDrawOverlays(this)) startIslandService()
+        else {
+            getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ISLAND_ENABLED, false).apply()
+            sendIslandState(false)
+        }
+    }
+
     private val permissionLauncher = registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        if (granted && scanPending) scanDeviceLibrary()
-        else sendTracks(JSONArray())
+        if (granted && scanPending) scanDeviceLibrary() else sendTracks(JSONArray())
         scanPending = false
     }
 
@@ -62,7 +71,6 @@ class MainActivity : ComponentActivity() {
         window.statusBarColor = android.graphics.Color.rgb(11, 6, 18)
         window.navigationBarColor = android.graphics.Color.rgb(11, 6, 18)
         window.setSoftInputMode(WindowManager.LayoutParams.SOFT_INPUT_ADJUST_RESIZE)
-
         webView = WebView(this).apply {
             setBackgroundColor(android.graphics.Color.rgb(11, 6, 18))
             settings.javaScriptEnabled = true
@@ -78,6 +86,12 @@ class MainActivity : ComponentActivity() {
         webView.loadUrl("file:///android_asset/index.html")
         connectMediaController()
         handler.post(progressRunnable)
+        if (islandEnabled() && Settings.canDrawOverlays(this)) startIslandService()
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (::webView.isInitialized) sendIslandState(islandEnabled() && Settings.canDrawOverlays(this))
     }
 
     private fun connectMediaController() {
@@ -99,26 +113,47 @@ class MainActivity : ComponentActivity() {
             return
         }
         val metadata = MediaMetadata.Builder().setTitle(title).setArtist(artist).build()
-        val item = MediaItem.Builder().setUri(uri).setMediaMetadata(metadata).build()
-        controller.setMediaItem(item)
+        controller.setMediaItem(MediaItem.Builder().setUri(uri).setMediaMetadata(metadata).build())
         controller.prepare()
         controller.play()
     }
 
+    private fun islandEnabled(): Boolean =
+        getSharedPreferences(PREFS, MODE_PRIVATE).getBoolean(KEY_ISLAND_ENABLED, false)
+
+    private fun requestIsland() {
+        if (Settings.canDrawOverlays(this)) startIslandService()
+        else islandPermissionLauncher.launch(
+            Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, Uri.parse("package:$packageName"))
+        )
+    }
+
+    private fun startIslandService() {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ISLAND_ENABLED, true).apply()
+        ContextCompat.startForegroundService(this, Intent(this, IslandOverlayService::class.java))
+        sendIslandState(true)
+    }
+
+    private fun stopIslandService() {
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putBoolean(KEY_ISLAND_ENABLED, false).apply()
+        stopService(Intent(this, IslandOverlayService::class.java))
+        sendIslandState(false)
+    }
+
+    private fun sendIslandState(enabled: Boolean) {
+        if (!::webView.isInitialized) return
+        webView.evaluateJavascript("window.onIslandState && window.onIslandState($enabled)", null)
+    }
+
     inner class NyxelBridge {
-        @JavascriptInterface
-        fun playLocal(uriText: String, title: String, artist: String) {
+        @JavascriptInterface fun playLocal(uriText: String, title: String, artist: String) {
             runOnUiThread {
                 val uri = runCatching { Uri.parse(uriText) }.getOrNull() ?: return@runOnUiThread
                 playTrack(uri, title, artist)
             }
         }
-
-        @JavascriptInterface
-        fun pause() { runOnUiThread { mediaController?.pause() } }
-
-        @JavascriptInterface
-        fun scanDeviceMusic() {
+        @JavascriptInterface fun pause() { runOnUiThread { mediaController?.pause() } }
+        @JavascriptInterface fun scanDeviceMusic() {
             runOnUiThread {
                 val permission = if (Build.VERSION.SDK_INT >= 33) Manifest.permission.READ_MEDIA_AUDIO
                     else Manifest.permission.READ_EXTERNAL_STORAGE
@@ -130,16 +165,16 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
+        @JavascriptInterface fun enableIsland() { runOnUiThread { requestIsland() } }
+        @JavascriptInterface fun disableIsland() { runOnUiThread { stopIslandService() } }
+        @JavascriptInterface fun isIslandEnabled(): Boolean =
+            islandEnabled() && Settings.canDrawOverlays(this@MainActivity)
     }
 
     private fun scanDeviceLibrary() {
         val tracks = JSONArray()
         val collection = MediaStore.Audio.Media.EXTERNAL_CONTENT_URI
-        val projection = arrayOf(
-            MediaStore.Audio.Media._ID,
-            MediaStore.Audio.Media.TITLE,
-            MediaStore.Audio.Media.ARTIST
-        )
+        val projection = arrayOf(MediaStore.Audio.Media._ID, MediaStore.Audio.Media.TITLE, MediaStore.Audio.Media.ARTIST)
         val selection = MediaStore.Audio.Media.IS_MUSIC + " != 0"
         val sortOrder = MediaStore.Audio.Media.TITLE + " COLLATE NOCASE ASC"
         val cursor: Cursor? = contentResolver.query(collection, projection, selection, null, sortOrder)
@@ -149,13 +184,10 @@ class MainActivity : ComponentActivity() {
             val artistColumn = it.getColumnIndexOrThrow(MediaStore.Audio.Media.ARTIST)
             while (it.moveToNext()) {
                 val id = it.getLong(idColumn)
-                val uri = Uri.withAppendedPath(collection, id.toString())
-                tracks.put(
-                    JSONObject()
-                        .put("uri", uri.toString())
-                        .put("name", it.getString(titleColumn) ?: "Bilinmeyen parça")
-                        .put("artist", it.getString(artistColumn) ?: "Bilinmeyen sanatçı")
-                )
+                tracks.put(JSONObject()
+                    .put("uri", Uri.withAppendedPath(collection, id.toString()).toString())
+                    .put("name", it.getString(titleColumn) ?: "Bilinmeyen parça")
+                    .put("artist", it.getString(artistColumn) ?: "Bilinmeyen sanatçı"))
             }
         }
         sendTracks(tracks)
@@ -176,5 +208,10 @@ class MainActivity : ComponentActivity() {
             webView.destroy()
         }
         super.onDestroy()
+    }
+
+    companion object {
+        private const val PREFS = "nyxel_settings"
+        private const val KEY_ISLAND_ENABLED = "island_enabled"
     }
 }
