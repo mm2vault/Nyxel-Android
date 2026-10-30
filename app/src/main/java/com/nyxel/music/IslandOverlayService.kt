@@ -173,7 +173,10 @@ class IslandOverlayService : Service() {
             val launch = packageManager.getLaunchIntentForPackage(packageName)?.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             if (launch != null) startActivity(launch)
         }
-        val close = actionButton("×") {\n            getSharedPreferences("nyxel_settings", MODE_PRIVATE).edit().putBoolean("island_enabled", false).apply()\n            stopSelf()\n        }
+        val close = actionButton("×") {
+            getSharedPreferences("nyxel_settings", MODE_PRIVATE).edit().putBoolean("island_enabled", false).apply()
+            stopSelf()
+        }
         listOf(previous, playView!!, next, open, close).forEach { actionRow.addView(it) }
         detailsPanel?.addView(actionRow)
         root.addView(detailsPanel)
