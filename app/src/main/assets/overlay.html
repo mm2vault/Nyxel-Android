@@ -576,6 +576,10 @@ body {
 html,body{width:100%;height:100%;min-height:0;margin:0!important;padding:0!important;display:block!important;overflow:hidden!important;background:transparent!important;background-color:transparent!important;background-image:none!important;box-shadow:none!important}
 body{box-sizing:border-box!important;color:var(--fg);font-family:var(--font)}
 .island{margin:0 auto!important;max-width:100%!important}
+/* Animate only the visible face. Hidden panels must not burn frames. */
+.island[data-open="false"] .open *,
+.island[data-open="true"] .closed *{animation-play-state:paused!important}
+@media(prefers-reduced-motion:reduce){*,*::before,*::after{animation:none!important;transition:none!important}}
 </style>
 </head>
 <body>
@@ -645,11 +649,12 @@ body{box-sizing:border-box!important;color:var(--fg);font-family:var(--font)}
   var faces=[].slice.call(document.querySelectorAll('.nyxel'));
   var status=document.getElementById('status');
   var chip=document.getElementById('chip');
-  var target=null,lastMove=0,open=false,playing=false,waving=false;
+  var target=null,open=false,playing=false,waving=false,lookFrame=0,lookExpiry=null;
   var reduced=window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var sleepTimer=null,moodTimer=null;
   function mood(){return faces[0].getAttribute('data-mood')||'idle'}
   function look(){
+    lookFrame=0;
     faces.forEach(function(face){
       var size=face.offsetWidth,ox=0,oy=0,tilt=0;
       if(mood()==='sleepy'){oy=size*.02;tilt=7}
@@ -668,11 +673,15 @@ body{box-sizing:border-box!important;color:var(--fg);font-family:var(--font)}
       face.style.setProperty('--tilt',tilt.toFixed(1)+'deg');
     });
   }
+  function scheduleLook(){
+    if(lookFrame)return;
+    lookFrame=requestAnimationFrame(look);
+  }
   function setMood(value,message){
     faces.forEach(function(face){face.setAttribute('data-mood',value)});
     if(message&&status)status.textContent=message;
     if(chip)chip.textContent=playing?'Müzikte':({idle:'Sakin',happy:'Mutlu',sleepy:'Uykulu'}[value]||'Sakin');
-    look();
+    scheduleLook();
   }
   function rest(){
     clearTimeout(sleepTimer);
@@ -700,9 +709,10 @@ body{box-sizing:border-box!important;color:var(--fg);font-family:var(--font)}
   }
   function onPoint(event){
     target={x:event.clientX,y:event.clientY};
-    lastMove=Date.now();
     if(open){if(mood()==='sleepy')greet();else rest()}
-    look();
+    scheduleLook();
+    clearTimeout(lookExpiry);
+    lookExpiry=setTimeout(function(){target=null;scheduleLook()},3000);
   }
   window.addEventListener('pointermove',onPoint,{passive:true});
   window.addEventListener('pointerdown',onPoint,{passive:true});
@@ -754,17 +764,13 @@ body{box-sizing:border-box!important;color:var(--fg);font-family:var(--font)}
     });
     if(chip)chip.textContent=playing?'Müzikte':'Sakin';
   };
-  setInterval(function(){
-    if(target&&Date.now()-lastMove>3000)target=null;
-    look();
-  },120);
-  function blink(){
+function blink(){
     faces.forEach(function(face){face.classList.add('blink')});
     setTimeout(function(){faces.forEach(function(face){face.classList.remove('blink')})},140);
     setTimeout(blink,2400+Math.random()*3200);
   }
   if(!reduced){setTimeout(blink,1800);setTimeout(function(){wave('Hey, buradayım!')},1500)}
-  look();
+  scheduleLook();
 })();
 </script>
 </body>
