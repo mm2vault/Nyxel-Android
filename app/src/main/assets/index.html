@@ -705,6 +705,17 @@ body {
 
 
 
+
+.ai-panel{gap:10px}.ai-settings{display:grid;gap:8px;padding:12px;border:1px solid rgba(167,139,250,.22);border-radius:16px;background:rgba(139,92,246,.07)}
+.ai-settings input,.ai-compose input{box-sizing:border-box;min-width:0;width:100%;height:42px;padding:0 12px;border:1px solid rgba(255,255,255,.14);border-radius:12px;background:rgba(0,0,0,.25);color:var(--fg);font:13px var(--font)}
+.ai-settings input::placeholder,.ai-compose input::placeholder{color:var(--faint)}.ai-settings-actions{display:flex;gap:8px}.ai-settings-actions .cta{flex:1;height:40px;font-size:12px}
+.ai-chat{display:flex;flex-direction:column;gap:9px;min-height:180px;max-height:360px;overflow:auto;padding:4px 2px}
+.ai-bubble{max-width:88%;padding:11px 13px;border-radius:15px;white-space:pre-wrap;overflow-wrap:anywhere;font-size:13px;line-height:1.55}
+.ai-bubble.user{align-self:flex-end;background:linear-gradient(135deg,rgba(139,92,246,.42),rgba(244,114,182,.25));border:1px solid rgba(244,114,182,.2)}
+.ai-bubble.assistant{align-self:flex-start;background:rgba(255,255,255,.07);border:1px solid rgba(255,255,255,.08)}
+.ai-compose{display:flex;gap:8px;align-items:center}.ai-compose input{flex:1;height:46px;font-size:14px}.ai-compose .cta{flex:none;height:46px;padding:0 15px}
+.ai-status{min-height:16px}.ai-status.err{color:#FFB4D6}
+
 @media (prefers-reduced-motion: reduce) {
   .island, .nyxel, .antenna::after, .spark, .zzz, .hand, .floor, .eq i, .bars i { animation: none !important; }
   .island, .layer, .eye, .visor, .nyxel { transition-duration: 0.01s; }
@@ -797,6 +808,7 @@ body {
     <button class="tab" type="button" role="tab" aria-selected="true">Kitaplık</button>
     <button class="tab" type="button" role="tab" aria-selected="false">Link ekle</button>
     <button class="tab" type="button" role="tab" aria-selected="false">Depo</button>
+    <button class="tab" type="button" role="tab" aria-selected="false">Nyxel AI</button>
   </div>
 
   <div class="panel" role="tabpanel"><div class="list" id="list"></div></div>
@@ -814,6 +826,21 @@ body {
     <button class="cta" id="scanBtn" type="button">Depoyu tara</button>
     <p class="note" id="scanMsg" role="status"></p>
     <p class="note">Android medya kitaplığındaki ses dosyaları taranır. İlk kullanımda ses erişim izni istenir.</p>
+  </div>
+
+
+  <div class="panel ai-panel" role="tabpanel" hidden>
+    <div class="ai-settings">
+      <div class="lib-head"><strong>AI bağlantısı</strong><span id="aiKeyState">Anahtar kontrol ediliyor</span></div>
+      <input id="aiKeyInput" type="password" autocomplete="off" placeholder="OpenRouter API anahtarın" aria-label="OpenRouter API anahtarı">
+      <input id="aiModelInput" type="text" value="openrouter/free" spellcheck="false" placeholder="Model kimliği" aria-label="AI model kimliği">
+      <div class="ai-settings-actions"><button class="cta" id="aiSaveKey" type="button">Anahtarı kaydet</button><button class="cta" id="aiRemoveKey" type="button">Anahtarı sil</button></div>
+      <p class="note">Anahtar bu cihazda Android Keystore ile şifrelenir. Ücretsiz model yönlendiricisi için openrouter/free kullanabilirsin; sağlayıcının kullanım limitleri olabilir.</p>
+    </div>
+    <div class="ai-chat" id="aiChat" aria-live="polite"><div class="ai-bubble assistant">Merhaba! Ben Nyxel. Bana bir şey sorabilirsin.</div></div>
+    <p class="note ai-status" id="aiStatus" role="status">Mesaj göndermek için kendi OpenRouter anahtarını ekle.</p>
+    <form class="ai-compose" id="aiForm"><input id="aiMessage" type="text" maxlength="4000" autocomplete="off" placeholder="Nyxel'e bir şey sor..." aria-label="Nyxel AI mesajı"><button class="cta" id="aiSend" type="submit">Gönder</button></form>
+    <button class="note" id="aiClear" type="button" style="justify-self:end;border:0;background:none;color:var(--muted);font:inherit">Sohbet geçmişini temizle</button>
   </div>
 
   <p class="foot">Nyxel Music · Android medya motoru</p>
@@ -1178,6 +1205,24 @@ body {
     updateStatus.textContent = 'Güncelleme kontrolü yalnızca Android uygulamasında kullanılabilir.';
   }
 
+
+
+  /* Nyxel AI chat */
+  var aiChat=document.getElementById('aiChat'),aiForm=document.getElementById('aiForm'),aiMessage=document.getElementById('aiMessage'),aiSend=document.getElementById('aiSend'),aiStatus=document.getElementById('aiStatus'),aiKeyInput=document.getElementById('aiKeyInput'),aiKeyState=document.getElementById('aiKeyState'),aiModelInput=document.getElementById('aiModelInput');
+  var aiHistory=[],aiBusy=false;
+  try{aiHistory=JSON.parse(localStorage.getItem('nyxel.ai.history')||'[]')}catch(e){aiHistory=[]}
+  if(!Array.isArray(aiHistory))aiHistory=[];
+  aiHistory=aiHistory.filter(function(m){return m&&(m.role==='user'||m.role==='assistant')&&typeof m.content==='string'}).slice(-40);
+  function renderAiChat(){aiChat.textContent='';if(!aiHistory.length){var w=document.createElement('div');w.className='ai-bubble assistant';w.textContent='Merhaba! Ben Nyxel. Bana bir şey sorabilirsin.';aiChat.appendChild(w)}aiHistory.forEach(function(m){var b=document.createElement('div');b.className='ai-bubble '+m.role;b.textContent=m.content;aiChat.appendChild(b)});aiChat.scrollTop=aiChat.scrollHeight}
+  function saveAiHistory(){try{localStorage.setItem('nyxel.ai.history',JSON.stringify(aiHistory.slice(-40)))}catch(e){}}
+  function setAiBusy(v){aiBusy=v;aiSend.disabled=v;aiSend.textContent=v?'...':'Gönder'}
+  function refreshAiKeyState(){if(!window.NyxelNative){aiKeyState.textContent='Android uygulaması gerekli';return}aiKeyState.textContent=window.NyxelNative.hasAiKey()?'Anahtar kayıtlı':'Anahtar eklenmedi'}
+  document.getElementById('aiSaveKey').addEventListener('click',function(){if(!window.NyxelNative){aiStatus.textContent='Bu özellik Android uygulamasında kullanılabilir.';return}var v=aiKeyInput.value.trim();if(!v){aiStatus.textContent='Önce API anahtarını gir.';aiStatus.className='note ai-status err';return}var result=window.NyxelNative.saveAiKey(v);if(result==='OK'){aiKeyInput.value='';aiStatus.textContent='API anahtarı bu cihaza şifreli olarak kaydedildi.';aiStatus.className='note ai-status';refreshAiKeyState()}else{aiStatus.textContent=result||'Anahtar kaydedilemedi.';aiStatus.className='note ai-status err'}});
+  document.getElementById('aiRemoveKey').addEventListener('click',function(){if(window.NyxelNative)window.NyxelNative.removeAiKey();aiKeyInput.value='';refreshAiKeyState();aiStatus.textContent='Kayıtlı API anahtarı silindi.';aiStatus.className='note ai-status'});
+  document.getElementById('aiClear').addEventListener('click',function(){aiHistory=[];saveAiHistory();renderAiChat();aiStatus.textContent='Sohbet geçmişi temizlendi.';aiStatus.className='note ai-status'});
+  aiForm.addEventListener('submit',function(e){e.preventDefault();var msg=aiMessage.value.trim();if(!msg||aiBusy)return;if(!window.NyxelNative){aiStatus.textContent='AI bağlantısı Android uygulamasında kullanılabilir.';aiStatus.className='note ai-status err';return}if(!window.NyxelNative.hasAiKey()){aiStatus.textContent='Önce OpenRouter API anahtarını kaydet.';aiStatus.className='note ai-status err';return}aiHistory.push({role:'user',content:msg});aiHistory=aiHistory.slice(-40);aiMessage.value='';saveAiHistory();renderAiChat();setAiBusy(true);aiStatus.textContent='Nyxel düşünüyor...';aiStatus.className='note ai-status';window.NyxelNative.sendAiMessage(JSON.stringify(aiHistory.slice(-20)),aiModelInput.value.trim()||'openrouter/free')});
+  window.onNyxelAiReply=function(raw){var r={};try{r=typeof raw==='string'?JSON.parse(raw):raw}catch(e){}setAiBusy(false);if(r.answer){aiHistory.push({role:'assistant',content:r.answer});aiHistory=aiHistory.slice(-40);saveAiHistory();renderAiChat();aiStatus.textContent='Yanıt hazır.';aiStatus.className='note ai-status'}else{aiStatus.textContent=r.error||'AI yanıt veremedi.';aiStatus.className='note ai-status err'}};
+  refreshAiKeyState();renderAiChat();
 
   var tabs = [].slice.call(document.querySelectorAll('.tab'));
   var panels = [].slice.call(document.querySelectorAll('.panel'));
